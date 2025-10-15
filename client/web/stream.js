@@ -203,9 +203,16 @@ async function handleSignalingMessage(message) {
 
             case 'error':
                 console.error('Server error:', message.message);
-                alert(`Error: ${message.message}`);
+
+                // Check if it's WebRTC unavailable error
+                if (message.message && message.message.toLowerCase().includes('not available')) {
+                    alert(`WebRTC not available on server.\n\nThe backend needs aiortc and av packages installed.\n\nTo fix:\n1. docker exec -it vmi-backend bash\n2. pip install aiortc av\n3. Restart backend`);
+                    updateStatus('disconnected', 'WebRTC unavailable');
+                } else {
+                    alert(`Error: ${message.message}`);
+                    updateStatus('disconnected', 'Error');
+                }
                 setLoading(false);
-                updateStatus('disconnected', 'Error');
                 break;
 
             default:

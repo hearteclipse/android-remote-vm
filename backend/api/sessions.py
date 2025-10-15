@@ -190,12 +190,31 @@ async def websocket_endpoint(websocket: WebSocket, session_token: str):
             message = json.loads(data)
 
             # Process WebRTC messages (offer, answer, ice candidates)
-            response = await webrtc_manager.handle_message(
-                message, device.container_id, device.ip_address, device.webrtc_port
-            )
+            try:
+                response = await webrtc_manager.handle_message(
+                    message, device.container_id, device.ip_address, device.webrtc_port
+                )
 
-            if response:
-                await websocket.send_text(json.dumps(response))
+                if response:
+                    await websocket.send_text(json.dumps(response))
+
+                    # If WebRTC not available, notify client but keep connection open
+                    if (
+                        response.get("type") == "error"
+                        and "not available" in response.get("message", "").lower()
+                    ):
+                        # Keep connection alive for future messages
+                        pass
+            except Exception as msg_error:
+                # Log error but keep WebSocket open
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "type": "error",
+                            "message": f"Message processing error: {str(msg_error)}",
+                        }
+                    )
+                )
 
     except WebSocketDisconnect:
         # Update session status

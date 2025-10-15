@@ -120,6 +120,7 @@ async function connectWebSocket(token) {
             console.log('WebSocket closed');
             updateStatus('disconnected', 'Disconnected');
             cleanup();
+            setLoading(false);
         };
     });
 }
@@ -161,11 +162,18 @@ async function setupWebRTC() {
 
         await peerConnection.setLocalDescription(offer);
 
-        // Send offer through WebSocket
-        websocket.send(JSON.stringify({
-            type: 'offer',
-            sdp: offer.sdp
-        }));
+        // Send offer through WebSocket (guard against CLOSED/CLOSING)
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+            websocket.send(JSON.stringify({
+                type: 'offer',
+                sdp: offer.sdp
+            }));
+        } else {
+            console.warn('WebSocket not open. Aborting offer send.');
+            updateStatus('disconnected', 'Connection lost');
+            setLoading(false);
+            return;
+        }
 
     } catch (error) {
         console.error('Error setting up WebRTC:', error);
@@ -196,6 +204,8 @@ async function handleSignalingMessage(message) {
             case 'error':
                 console.error('Server error:', message.message);
                 alert(`Error: ${message.message}`);
+                setLoading(false);
+                updateStatus('disconnected', 'Error');
                 break;
 
             default:

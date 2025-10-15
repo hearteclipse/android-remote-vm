@@ -351,38 +351,66 @@ if WEBRTC_AVAILABLE:
             self.port = port
             self.process = None
             self.counter = 0
+            self.adb_connected = False
+            self.last_good_frame = None
             logger.info(f"AndroidVideoTrack initialized for {device_ip}:{port}")
-            self._start_capture()
 
-        def _start_capture(self):
-            """Start screen capture from Android device using scrcpy or ADB"""
+        async def _ensure_adb_connected(self):
+            """Ensure ADB is connected to the device"""
+            if self.adb_connected:
+                return True
+
             try:
-                # Use scrcpy for efficient screen capture
-                # Fallback to ADB screencap if scrcpy not available
-                cmd = [
-                    "adb",
-                    "-s",
-                    f"{self.device_ip}:5555",
-                    "exec-out",
-                    "screenrecord",
-                    "--output-format=h264",
-                    "-",
-                ]
-
-                self.process = subprocess.Popen(
-                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                # Try to connect to ADB device
+                connect_cmd = ["adb", "connect", f"{self.device_ip}:5555"]
+                connect_proc = await asyncio.create_subprocess_exec(
+                    *connect_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
                 )
+                stdout, stderr = await connect_proc.communicate()
+                result = stdout.decode().strip()
+                logger.info(f"🔌 ADB connect result: {result}")
 
-                logger.info(f"Started screen capture for {self.device_ip}")
+                # Check if connected successfully
+                if (
+                    "connected" in result.lower()
+                    or "already connected" in result.lower()
+                ):
+                    self.adb_connected = True
+                    logger.info(f"✅ ADB connected to {self.device_ip}:5555")
+                    return True
+                else:
+                    logger.error(f"❌ ADB connection failed: {result}")
+                    return False
 
             except Exception as e:
-                logger.error(f"Error starting screen capture: {e}")
+                logger.error(f"❌ Failed to connect ADB: {e}")
+                return False
 
         async def recv(self):
             """Receive next video frame from Android screen"""
             if self.counter == 0:
                 logger.info("🎥 FIRST recv() call - video streaming starting!")
                 logger.info(f"📱 Capturing screen from {self.device_ip}")
+
+            # Ensure ADB is connected
+            if not await self._ensure_adb_connected():
+                # If ADB connection fails, return test pattern
+                await asyncio.sleep(1 / 30)
+                self.counter += 1
+                if self.last_good_frame:
+                    return self.last_good_frame
+
+                img = np.zeros((720, 1280, 3), dtype=np.uint8)
+                img[:, :, 0] = 100
+                img[:, :, 1] = 50
+                img[:, :, 2] = 50
+
+                frame = VideoFrame.from_ndarray(img, format="rgb24")
+                frame.pts = self.counter
+                frame.time_base = fractions.Fraction(1, 30)
+                return frame
 
             try:
                 import asyncio
@@ -410,11 +438,14 @@ if WEBRTC_AVAILABLE:
 
                     stdout, stderr = await process.communicate()
 
-                    if stderr:
+                    if stderr and self.counter < 5:  # Only log first few errors
                         logger.warning(f"ADB stderr: {stderr.decode()[:100]}")
 
                     if not stdout or len(stdout) < 100:
-                        logger.error("Failed to capture screenshot, using test pattern")
+                        if self.counter < 5:
+                            logger.error("❌ Failed to capture screenshot, retrying...")
+                        # Retry connection on next frame
+                        self.adb_connected = False
                         raise Exception("Screenshot capture failed")
 
                     # Decode PNG to numpy array
@@ -442,7 +473,12 @@ if WEBRTC_AVAILABLE:
                     frame.pts = self.counter
                     frame.time_base = fractions.Fraction(1, 30)
 
-                    if self.counter % 30 == 0:  # Log every second
+                    # Store last good frame
+                    self.last_good_frame = frame
+
+                    if (
+                        self.counter == 1 or self.counter % 30 == 0
+                    ):  # Log first and every second
                         logger.info(
                             f"📸 Captured frame {self.counter} ({img.shape[1]}x{img.shape[0]})"
                         )
@@ -453,9 +489,16 @@ if WEBRTC_AVAILABLE:
                     return frame
 
             except Exception as e:
-                logger.error(f"Error capturing frame: {e}")
-                # Fallback to test pattern
+                if self.counter < 5:
+                    logger.error(f"❌ Error capturing frame: {e}")
+
+                # Fallback to last good frame or test pattern
                 await asyncio.sleep(1 / 30)
+                self.counter += 1
+
+                if self.last_good_frame:
+                    return self.last_good_frame
+
                 img = np.zeros((720, 1280, 3), dtype=np.uint8)
                 img[:, :, 0] = 100
                 img[:, :, 1] = 50
@@ -464,7 +507,6 @@ if WEBRTC_AVAILABLE:
                 frame = VideoFrame.from_ndarray(img, format="rgb24")
                 frame.pts = self.counter
                 frame.time_base = fractions.Fraction(1, 30)
-                self.counter += 1
 
                 return frame
 

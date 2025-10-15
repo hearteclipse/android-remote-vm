@@ -52,7 +52,12 @@ class WebRTCManager:
 
         # Configure STUN/TURN servers
         self.rtc_config = RTCConfiguration(
-            iceServers=[RTCIceServer(urls=[settings.STUN_SERVER])]
+            iceServers=[
+                RTCIceServer(urls=[settings.STUN_SERVER]),
+                # Add Google's public STUN servers for better connectivity
+                RTCIceServer(urls=["stun:stun1.l.google.com:19302"]),
+                RTCIceServer(urls=["stun:stun2.l.google.com:19302"]),
+            ]
         )
 
         logger.info("WebRTC Manager initialized with full WebRTC support")
@@ -110,6 +115,10 @@ class WebRTCManager:
             @pc.on("connectionstatechange")
             async def on_connectionstatechange():
                 logger.info(f"Connection state: {pc.connectionState}")
+                if pc.connectionState == "connected":
+                    logger.info("WebRTC connection fully established!")
+                elif pc.connectionState == "failed":
+                    logger.error("WebRTC connection failed!")
 
             @pc.on("track")
             def on_track(track):

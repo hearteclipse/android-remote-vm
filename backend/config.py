@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://redis:6379"
 
+    TURN_SERVER: str = "turn:openrelay.metered.ca:80"
+    TURN_USERNAME: str = "openrelayproject"
+    TURN_PASSWORD: str = "openrelayproject"
     # Docker
     DOCKER_HOST: str = "unix:///var/run/docker.sock"
     ANDROID_NETWORK: str = "vmi-network"

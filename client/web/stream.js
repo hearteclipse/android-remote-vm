@@ -138,19 +138,48 @@ async function setupWebRTC() {
         // Handle incoming tracks
         peerConnection.ontrack = (event) => {
             console.log('Received remote track', event);
-            const remoteVideo = document.getElementById('remoteVideo');
-            remoteVideo.srcObject = event.streams[0];
+            console.log('Stream tracks:', event.streams[0].getTracks());
 
-            // Force play (some browsers need this)
-            remoteVideo.play().then(() => {
-                console.log('Video playing successfully');
+            const remoteVideo = document.getElementById('remoteVideo');
+            const stream = event.streams[0];
+
+            remoteVideo.srcObject = stream;
+
+            // Add event listeners to debug
+            remoteVideo.onloadedmetadata = () => {
+                console.log('Video metadata loaded');
+            };
+
+            remoteVideo.oncanplay = () => {
+                console.log('Video can play');
+            };
+
+            // Force play with timeout (some browsers need this)
+            const playPromise = remoteVideo.play();
+
+            if (playPromise !== undefined) {
+                playPromise.then(() => {
+                    console.log('Video playing successfully');
+                    updateStatus('connected', 'Connected');
+                    setLoading(false);
+                }).catch(err => {
+                    console.error('Error playing video:', err);
+                    // Try again without user gesture requirement
+                    remoteVideo.muted = true;
+                    remoteVideo.play().catch(e => console.error('Retry failed:', e));
+                    updateStatus('connected', 'Connected');
+                    setLoading(false);
+                });
+            }
+
+            // Timeout fallback - stop loading after 3 seconds
+            setTimeout(() => {
+                if (remoteVideo.paused) {
+                    console.warn('Video still paused after 3s, forcing stop loading');
+                }
+                setLoading(false);
                 updateStatus('connected', 'Connected');
-                setLoading(false);
-            }).catch(err => {
-                console.error('Error playing video:', err);
-                updateStatus('connected', 'Connected (video issue)');
-                setLoading(false);
-            });
+            }, 3000);
         };
 
         // Handle ICE candidates

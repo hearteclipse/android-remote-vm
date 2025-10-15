@@ -189,11 +189,39 @@ async function setupWebRTC() {
 
         // Handle ICE candidates
         peerConnection.onicecandidate = (event) => {
-            if (event.candidate && websocket.readyState === WebSocket.OPEN) {
-                websocket.send(JSON.stringify({
-                    type: 'ice-candidate',
-                    candidate: event.candidate
-                }));
+            if (event.candidate) {
+                console.log('🧊 ICE candidate:', event.candidate.type, event.candidate.candidate);
+                if (websocket.readyState === WebSocket.OPEN) {
+                    websocket.send(JSON.stringify({
+                        type: 'ice-candidate',
+                        candidate: event.candidate
+                    }));
+                }
+            } else {
+                console.log('🧊 ICE gathering complete');
+            }
+        };
+
+        // Monitor connection state
+        peerConnection.onconnectionstatechange = () => {
+            console.log('🔌 Connection state:', peerConnection.connectionState);
+            if (peerConnection.connectionState === 'connected') {
+                console.log('✅ WebRTC connection established!');
+                updateStatus('connected', 'Connected');
+                setLoading(false);
+            } else if (peerConnection.connectionState === 'failed') {
+                console.error('❌ WebRTC connection failed');
+                updateStatus('disconnected', 'Connection failed');
+                setLoading(false);
+            }
+        };
+
+        // Monitor ICE connection state
+        peerConnection.oniceconnectionstatechange = () => {
+            console.log('🧊 ICE connection state:', peerConnection.iceConnectionState);
+            if (peerConnection.iceConnectionState === 'failed' ||
+                peerConnection.iceConnectionState === 'disconnected') {
+                console.error('❌ ICE connection failed/disconnected');
             }
         };
 

@@ -98,15 +98,15 @@ class WebRTCManager:
             pc = RTCPeerConnection(configuration=self.rtc_config)
             self.peer_connections[container_id] = pc
 
+            # Set remote description first
+            offer = RTCSessionDescription(sdp=message["sdp"], type=message["type"])
+            await pc.setRemoteDescription(offer)
+
             # Create video track from Android screen
             logger.info(f"Creating AndroidVideoTrack for {device_ip}:{webrtc_port}")
             video_track = AndroidVideoTrack(device_ip, webrtc_port)
             pc.addTrack(video_track)
             logger.info("Video track added to peer connection")
-
-            # Set remote description
-            offer = RTCSessionDescription(sdp=message["sdp"], type=message["type"])
-            await pc.setRemoteDescription(offer)
 
             # Create answer
             answer = await pc.createAnswer()

@@ -249,8 +249,15 @@ if WEBRTC_AVAILABLE:
                 # and convert to VideoFrame
                 # This is a placeholder implementation
 
-                # Create a dummy frame for demonstration
+                # Create a test pattern frame (blue gradient for testing)
+                import time
+
                 img = np.zeros((720, 1280, 3), dtype=np.uint8)
+                # Add a color gradient to verify video is working
+                img[:, :, 0] = 100  # Blue channel
+                img[:, :, 1] = int((time.time() % 1.0) * 255)  # Green channel animates
+                img[:, :, 2] = 50  # Red channel
+
                 frame = VideoFrame.from_ndarray(img, format="bgr24")
                 frame.pts = self.next_timestamp()
                 frame.time_base = "1/90000"

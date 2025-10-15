@@ -6,6 +6,7 @@ from typing import Dict, Optional
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import psutil
+from contextlib import suppress
 
 from config import settings
 
@@ -35,6 +36,16 @@ class DockerRuntime:
         client = cls.client()
         name = f"android-{device.id}"
         image = settings.ANDROID_BASE_IMAGE  # ex: "ghcr.io/.../android-webrtc:latest"
+
+        # Ensure network exists
+        try:
+            network = client.networks.get(settings.ANDROID_NETWORK)
+            logger.info(f"Using existing network: {settings.ANDROID_NETWORK}")
+        except NotFound:
+            logger.info(f"Creating network: {settings.ANDROID_NETWORK}")
+            network = client.networks.create(
+                name=settings.ANDROID_NETWORK, driver="bridge"
+            )
 
         # Container configuration
         environment = {
@@ -131,17 +142,25 @@ class VMManager:
         """Create and start Docker container (runs in thread pool)"""
         try:
             # Remove existing container if any
-            try:
-                client = DockerRuntime.client()
+            client = DockerRuntime.client()
+            with suppress(NotFound):
                 old_container = client.containers.get(name)
                 old_container.remove(force=True)
                 logger.info(f"Removed old container: {name}")
+
+            # Ensure network exists
+            client = DockerRuntime.client()
+            try:
+                network = client.networks.get(settings.ANDROID_NETWORK)
+                logger.info(f"Using existing network: {settings.ANDROID_NETWORK}")
             except NotFound:
-                pass
+                logger.info(f"Creating network: {settings.ANDROID_NETWORK}")
+                network = client.networks.create(
+                    name=settings.ANDROID_NETWORK, driver="bridge"
+                )
 
             # Create container
-            client = DockerRuntime.client()
-            container = client.containers.run(
+            return client.containers.run(
                 image=settings.ANDROID_BASE_IMAGE,
                 name=name,
                 environment=environment,
@@ -157,8 +176,6 @@ class VMManager:
                 cpu_count=device.cpu_allocated,
                 restart_policy={"Name": "unless-stopped"},
             )
-
-            return container
 
         except Exception as e:
             logger.error(f"Error creating container: {e}")

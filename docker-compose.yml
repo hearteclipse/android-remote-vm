@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # PostgreSQL database for session and user management
   postgres:
@@ -41,14 +39,18 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: vmi-backend
+    privileged: true
     ports:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://vmi_user:vmi_password@postgres:5432/vmi_db
       - REDIS_URL=redis://redis:6379
       - ANDROID_NETWORK=vmi-network
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - DOCKER_TLS_VERIFY=
+      - DOCKER_CERT_PATH=
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/docker.sock:/var/run/docker.sock:rw
       - ./backend:/app
     depends_on:
       postgres:
@@ -58,6 +60,7 @@ services:
     networks:
       - vmi-network
     restart: unless-stopped
+    user: root
 
   # Nginx reverse proxy
   nginx:

@@ -118,15 +118,23 @@ class WebRTCManager:
             # Add event handlers for debugging
             @pc.on("connectionstatechange")
             async def on_connectionstatechange():
-                logger.info(f"Connection state: {pc.connectionState}")
+                logger.info(f"🔌 Backend connection state: {pc.connectionState}")
                 if pc.connectionState == "connected":
-                    logger.info("WebRTC connection fully established!")
+                    logger.info("✅ Backend WebRTC connection fully established!")
                 elif pc.connectionState == "failed":
-                    logger.error("WebRTC connection failed!")
+                    logger.error("❌ Backend WebRTC connection failed!")
+
+            @pc.on("iceconnectionstatechange")
+            async def on_iceconnectionstatechange():
+                logger.info(f"🧊 Backend ICE connection state: {pc.iceConnectionState}")
+
+            @pc.on("icegatheringstatechange")
+            async def on_icegatheringstatechange():
+                logger.info(f"🧊 Backend ICE gathering state: {pc.iceGatheringState}")
 
             @pc.on("track")
             def on_track(track):
-                logger.info(f"Track received: {track.kind}")
+                logger.info(f"📹 Track received: {track.kind}")
 
             # Create video track from Android screen BEFORE setting remote description
             logger.info(f"Creating AndroidVideoTrack for {device_ip}:{webrtc_port}")
@@ -168,15 +176,46 @@ class WebRTCManager:
             raise
 
     async def _handle_ice_candidate(self, message: Dict, container_id: str) -> None:
-        """Handle ICE candidate"""
+        """Handle ICE candidate from client"""
         try:
             if pc := self.peer_connections.get(container_id):
-                # In production, you would add ICE candidates properly
-                # This is a simplified version
-                logger.info(f"Received ICE candidate for {container_id}")
+                from aiortc import RTCIceCandidate
+
+                candidate_data = message.get("candidate", {})
+
+                # Extract ICE candidate string
+                candidate_str = candidate_data.get("candidate", "")
+                sdp_mid = candidate_data.get("sdpMid")
+                sdp_mline_index = candidate_data.get("sdpMLineIndex", 0)
+
+                if candidate_str:
+                    logger.info(
+                        f"🧊 Received remote ICE candidate for {container_id[:12]}"
+                    )
+                    logger.debug(f"   Candidate: {candidate_str[:80]}...")
+                    logger.debug(
+                        f"   sdpMid: {sdp_mid}, sdpMLineIndex: {sdp_mline_index}"
+                    )
+
+                    try:
+                        # Parse ICE candidate from SDP string
+                        ice_candidate = RTCIceCandidate.from_sdp(candidate_str)
+                        ice_candidate.sdpMid = sdp_mid
+                        ice_candidate.sdpMLineIndex = sdp_mline_index
+
+                        # Add to peer connection
+                        await pc.addIceCandidate(ice_candidate)
+                        logger.info(f"✅ Remote ICE candidate added successfully")
+                    except Exception as parse_error:
+                        logger.error(f"❌ Failed to parse ICE candidate: {parse_error}")
+                        logger.debug(f"   Raw candidate data: {candidate_data}")
+                else:
+                    logger.info(
+                        f"🧊 ICE gathering complete signal received for {container_id[:12]}"
+                    )
 
         except Exception as e:
-            logger.error(f"Error handling ICE candidate: {e}")
+            logger.error(f"❌ Error handling ICE candidate: {e}", exc_info=True)
 
     async def _handle_input(self, message: Dict, device_ip: str) -> Dict:
         """Handle user input (touch, keyboard, etc.)"""

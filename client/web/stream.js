@@ -192,10 +192,17 @@ async function setupWebRTC() {
             if (event.candidate) {
                 console.log('🧊 ICE candidate:', event.candidate.type, event.candidate.candidate);
                 if (websocket.readyState === WebSocket.OPEN) {
-                    websocket.send(JSON.stringify({
+                    const candidateMsg = {
                         type: 'ice-candidate',
-                        candidate: event.candidate
-                    }));
+                        candidate: {
+                            candidate: event.candidate.candidate,
+                            sdpMid: event.candidate.sdpMid,
+                            sdpMLineIndex: event.candidate.sdpMLineIndex,
+                            usernameFragment: event.candidate.usernameFragment
+                        }
+                    };
+                    console.log('📤 Sending ICE candidate:', candidateMsg);
+                    websocket.send(JSON.stringify(candidateMsg));
                 }
             } else {
                 console.log('🧊 ICE gathering complete');

@@ -37,6 +37,12 @@ class DockerRuntime:
         name = f"android-{device.id}"
         image = settings.ANDROID_BASE_IMAGE  # ex: "ghcr.io/.../android-webrtc:latest"
 
+        # Remove existing container if any
+        with suppress(NotFound):
+            existing_container = client.containers.get(name)
+            existing_container.remove(force=True)
+            logger.info(f"Removed existing container: {name}")
+
         # Ensure network exists
         try:
             network = client.networks.get(settings.ANDROID_NETWORK)

@@ -3,6 +3,7 @@ import logging
 from typing import Dict, Optional
 import json
 import subprocess
+import fractions
 
 from config import settings
 
@@ -216,6 +217,7 @@ if WEBRTC_AVAILABLE:
             self.device_ip = device_ip
             self.port = port
             self.process = None
+            self.counter = 0
             self._start_capture()
 
         def _start_capture(self):
@@ -251,6 +253,10 @@ if WEBRTC_AVAILABLE:
 
                 # Create a test pattern frame (blue gradient for testing)
                 import time
+                import asyncio
+
+                # Control framerate (30 fps)
+                await asyncio.sleep(1 / 30)
 
                 img = np.zeros((720, 1280, 3), dtype=np.uint8)
                 # Add a color gradient to verify video is working
@@ -258,9 +264,14 @@ if WEBRTC_AVAILABLE:
                 img[:, :, 1] = int((time.time() % 1.0) * 255)  # Green channel animates
                 img[:, :, 2] = 50  # Red channel
 
+                # Add a moving white bar to verify animation
+                bar_pos = int((self.counter % 100) * 7.2)
+                img[bar_pos : bar_pos + 10, :] = 255
+                self.counter += 1
+
                 frame = VideoFrame.from_ndarray(img, format="bgr24")
-                frame.pts = self.next_timestamp()
-                frame.time_base = "1/90000"
+                frame.pts = self.counter
+                frame.time_base = fractions.Fraction(1, 30)
 
                 return frame
 

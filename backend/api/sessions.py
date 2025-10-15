@@ -161,28 +161,29 @@ async def websocket_endpoint(websocket: WebSocket, session_token: str):
     """WebSocket endpoint for WebRTC signaling"""
     await websocket.accept()
 
+    # Verify session token and get device info
+    device = None
+    async for db in get_session():
+        stmt = select(Session).where(Session.session_token == session_token)
+        result = await db.execute(stmt)
+        session = result.scalar_one_or_none()
+
+        if not session or session.status != "active":
+            await websocket.close(code=1008, reason="Invalid or inactive session")
+            return
+
+        # Get device info
+        stmt = select(Device).where(Device.id == session.device_id)
+        result = await db.execute(stmt)
+        device = result.scalar_one_or_none()
+
+        if not device or device.status != "running":
+            await websocket.close(code=1008, reason="Device not available")
+            return
+
+        break
+
     try:
-        # Verify session token
-        async for db in get_session():
-            stmt = select(Session).where(Session.session_token == session_token)
-            result = await db.execute(stmt)
-            session = result.scalar_one_or_none()
-
-            if not session or session.status != "active":
-                await websocket.close(code=1008, reason="Invalid or inactive session")
-                return
-
-            # Get device info
-            stmt = select(Device).where(Device.id == session.device_id)
-            result = await db.execute(stmt)
-            device = result.scalar_one_or_none()
-
-            if not device or device.status != "running":
-                await websocket.close(code=1008, reason="Device not available")
-                return
-
-            break
-
         # Handle WebRTC signaling
         while True:
             data = await websocket.receive_text()

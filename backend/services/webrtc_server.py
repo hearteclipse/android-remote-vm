@@ -379,44 +379,94 @@ if WEBRTC_AVAILABLE:
                 logger.error(f"Error starting screen capture: {e}")
 
         async def recv(self):
-            """Receive next video frame"""
+            """Receive next video frame from Android screen"""
             if self.counter == 0:
                 logger.info("🎥 FIRST recv() call - video streaming starting!")
+                logger.info(f"📱 Capturing screen from {self.device_ip}")
+
             try:
-                # In production, you would decode the H264 stream
-                # and convert to VideoFrame
-                # This is a placeholder implementation
-
-                # Create a test pattern frame (blue gradient for testing)
-                import time
                 import asyncio
+                from concurrent.futures import ThreadPoolExecutor
 
-                # Control framerate (30 fps)
-                await asyncio.sleep(1 / 30)
+                # Use ThreadPoolExecutor to avoid blocking the event loop
+                loop = asyncio.get_event_loop()
+                with ThreadPoolExecutor() as pool:
+                    # Take a screenshot using ADB screencap (PNG format)
+                    # This is simpler and more reliable than H264 streaming
+                    cmd = [
+                        "adb",
+                        "-s",
+                        f"{self.device_ip}:5555",
+                        "exec-out",
+                        "screencap",
+                        "-p",
+                    ]
 
-                img = np.zeros((720, 1280, 3), dtype=np.uint8)
-                # Add a color gradient to verify video is working
-                img[:, :, 0] = 100  # Blue channel
-                img[:, :, 1] = int((time.time() % 1.0) * 255)  # Green channel animates
-                img[:, :, 2] = 50  # Red channel
+                    process = await asyncio.create_subprocess_exec(
+                        *cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
 
-                # Add a moving white bar to verify animation
-                bar_pos = int((self.counter % 100) * 7.2)
-                img[bar_pos : bar_pos + 10, :] = 255
-                self.counter += 1
+                    stdout, stderr = await process.communicate()
 
-                frame = VideoFrame.from_ndarray(img, format="bgr24")
-                frame.pts = self.counter
-                frame.time_base = fractions.Fraction(1, 30)
+                    if stderr:
+                        logger.warning(f"ADB stderr: {stderr.decode()[:100]}")
 
-                if self.counter % 30 == 0:  # Log every second
-                    logger.info(f"Sending frame {self.counter}")
+                    if not stdout or len(stdout) < 100:
+                        logger.error("Failed to capture screenshot, using test pattern")
+                        raise Exception("Screenshot capture failed")
 
-                return frame
+                    # Decode PNG to numpy array
+                    import io
+                    from PIL import Image
+
+                    img_pil = Image.open(io.BytesIO(stdout))
+                    img = np.array(img_pil)
+
+                    # Convert RGBA to RGB if needed
+                    if img.shape[2] == 4:
+                        img = img[:, :, :3]
+
+                    # Resize to standard resolution if needed (for performance)
+                    if img.shape[0] > 720:
+                        img_pil = img_pil.resize((1280, 720), Image.LANCZOS)
+                        img = np.array(img_pil)
+                        if img.shape[2] == 4:
+                            img = img[:, :, :3]
+
+                    self.counter += 1
+
+                    # Create VideoFrame
+                    frame = VideoFrame.from_ndarray(img, format="rgb24")
+                    frame.pts = self.counter
+                    frame.time_base = fractions.Fraction(1, 30)
+
+                    if self.counter % 30 == 0:  # Log every second
+                        logger.info(
+                            f"📸 Captured frame {self.counter} ({img.shape[1]}x{img.shape[0]})"
+                        )
+
+                    # Control framerate (30 fps)
+                    await asyncio.sleep(1 / 30)
+
+                    return frame
 
             except Exception as e:
-                logger.error(f"Error receiving frame: {e}", exc_info=True)
-                raise
+                logger.error(f"Error capturing frame: {e}")
+                # Fallback to test pattern
+                await asyncio.sleep(1 / 30)
+                img = np.zeros((720, 1280, 3), dtype=np.uint8)
+                img[:, :, 0] = 100
+                img[:, :, 1] = 50
+                img[:, :, 2] = 50
+
+                frame = VideoFrame.from_ndarray(img, format="rgb24")
+                frame.pts = self.counter
+                frame.time_base = fractions.Fraction(1, 30)
+                self.counter += 1
+
+                return frame
 
         def __del__(self):
             """Cleanup"""

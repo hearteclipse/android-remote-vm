@@ -21,8 +21,9 @@ class Settings(BaseSettings):
     EMULATOR_ARCH: str = "x86_64"
 
     # WebRTC Settings
-    WEBRTC_PORT_RANGE_START: int = 50000
-    WEBRTC_PORT_RANGE_END: int = 51000
+    WEBRTC_PORT_RANGE_START: int = 49152
+    WEBRTC_PORT_RANGE_END: int = 49252
+    WEBRTC_PUBLIC_IP: Optional[str] = None  # Set via env var for GCP deployment
     STUN_SERVER: str = "stun:stun.l.google.com:19302"
 
     # TURN server for NAT traversal (free public server)

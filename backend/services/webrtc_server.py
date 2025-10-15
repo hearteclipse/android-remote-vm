@@ -51,17 +51,26 @@ class WebRTCManager:
         self.media_relay = MediaRelay()
 
         # Configure STUN/TURN servers for NAT traversal
-        self.rtc_config = RTCConfiguration(
-            iceServers=[
-                RTCIceServer(urls=[settings.STUN_SERVER]),
-                # Add TURN server for NAT traversal
-                RTCIceServer(
-                    urls=[settings.TURN_SERVER],
-                    username=settings.TURN_USERNAME,
-                    credential=settings.TURN_PASSWORD,
-                ),
-            ]
+        ice_servers = [RTCIceServer(urls=[settings.STUN_SERVER])]
+
+        # Add TURN server for NAT traversal
+        ice_servers.append(
+            RTCIceServer(
+                urls=[settings.TURN_SERVER],
+                username=settings.TURN_USERNAME,
+                credential=settings.TURN_PASSWORD,
+            )
         )
+
+        self.rtc_config = RTCConfiguration(iceServers=ice_servers)
+
+        # Log public IP configuration
+        if settings.WEBRTC_PUBLIC_IP:
+            logger.info(
+                f"WebRTC configured with public IP: {settings.WEBRTC_PUBLIC_IP}"
+            )
+        else:
+            logger.warning("WEBRTC_PUBLIC_IP not set - NAT traversal may fail")
 
         logger.info("WebRTC Manager initialized with full WebRTC support")
 
@@ -106,14 +115,6 @@ class WebRTCManager:
             pc = RTCPeerConnection(configuration=self.rtc_config)
             self.peer_connections[container_id] = pc
 
-            # Set remote description first
-            offer = RTCSessionDescription(sdp=message["sdp"], type=message["type"])
-            await pc.setRemoteDescription(offer)
-
-            # Create video track from Android screen
-            logger.info(f"Creating AndroidVideoTrack for {device_ip}:{webrtc_port}")
-            video_track = AndroidVideoTrack(device_ip, webrtc_port)
-
             # Add event handlers for debugging
             @pc.on("connectionstatechange")
             async def on_connectionstatechange():
@@ -127,17 +128,40 @@ class WebRTCManager:
             def on_track(track):
                 logger.info(f"Track received: {track.kind}")
 
+            # Create video track from Android screen BEFORE setting remote description
+            logger.info(f"Creating AndroidVideoTrack for {device_ip}:{webrtc_port}")
+            video_track = AndroidVideoTrack(device_ip, webrtc_port)
             pc.addTrack(video_track)
             logger.info("Video track added to peer connection")
+
+            # Now set remote description
+            offer = RTCSessionDescription(sdp=message["sdp"], type=message["type"])
+            await pc.setRemoteDescription(offer)
 
             # Create answer
             answer = await pc.createAnswer()
             await pc.setLocalDescription(answer)
 
-            logger.info(f"WebRTC connection established for {container_id}")
-            logger.info(f"Answer SDP: {pc.localDescription.sdp[:200]}...")
+            # Modify SDP to use public IP if configured
+            answer_sdp = pc.localDescription.sdp
+            if settings.WEBRTC_PUBLIC_IP:
+                # Replace private IPs with public IP in SDP
+                import re
 
-            return {"type": "answer", "sdp": pc.localDescription.sdp}
+                # Replace c= lines with public IP
+                answer_sdp = re.sub(
+                    r"c=IN IP4 (\d+\.\d+\.\d+\.\d+)",
+                    f"c=IN IP4 {settings.WEBRTC_PUBLIC_IP}",
+                    answer_sdp,
+                )
+                logger.info(
+                    f"Modified SDP to use public IP: {settings.WEBRTC_PUBLIC_IP}"
+                )
+
+            logger.info(f"WebRTC connection established for {container_id}")
+            logger.info(f"Answer SDP (first 200 chars): {answer_sdp[:200]}...")
+
+            return {"type": "answer", "sdp": answer_sdp}
 
         except Exception as e:
             logger.error(f"Error handling offer: {e}")
@@ -243,6 +267,7 @@ if WEBRTC_AVAILABLE:
             self.port = port
             self.process = None
             self.counter = 0
+            logger.info(f"AndroidVideoTrack initialized for {device_ip}:{port}")
             self._start_capture()
 
         def _start_capture(self):
@@ -271,6 +296,8 @@ if WEBRTC_AVAILABLE:
 
         async def recv(self):
             """Receive next video frame"""
+            if self.counter == 0:
+                logger.info("🎥 FIRST recv() call - video streaming starting!")
             try:
                 # In production, you would decode the H264 stream
                 # and convert to VideoFrame

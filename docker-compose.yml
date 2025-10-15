@@ -42,6 +42,7 @@ services:
     privileged: true
     ports:
       - "8000:8000"
+      - "49152-49252:49152-49252/udp" # WebRTC UDP ports
     environment:
       - DATABASE_URL=postgresql://vmi_user:vmi_password@postgres:5432/vmi_db
       - REDIS_URL=redis://redis:6379
@@ -49,6 +50,7 @@ services:
       - DOCKER_HOST=unix:///var/run/docker.sock
       - DOCKER_TLS_VERIFY=
       - DOCKER_CERT_PATH=
+      - WEBRTC_PUBLIC_IP=34.42.79.210
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - ./backend:/app

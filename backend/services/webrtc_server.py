@@ -198,17 +198,26 @@ class WebRTCManager:
                     )
 
                     try:
-                        # Parse ICE candidate from SDP string
-                        ice_candidate = RTCIceCandidate.from_sdp(candidate_str)
+                        # Parse ICE candidate using aiortc's internal function
+                        from aiortc.rtcicetransport import candidate_from_sdp
+
+                        # Remove "candidate:" prefix if present
+                        if candidate_str.startswith("candidate:"):
+                            candidate_str = candidate_str[10:]
+
+                        ice_candidate = candidate_from_sdp(candidate_str)
                         ice_candidate.sdpMid = sdp_mid
                         ice_candidate.sdpMLineIndex = sdp_mline_index
 
                         # Add to peer connection
                         await pc.addIceCandidate(ice_candidate)
-                        logger.info(f"✅ Remote ICE candidate added successfully")
+                        logger.info(
+                            f"✅ Remote ICE candidate added: {ice_candidate.type} {ice_candidate.ip}:{ice_candidate.port}"
+                        )
                     except Exception as parse_error:
                         logger.error(f"❌ Failed to parse ICE candidate: {parse_error}")
-                        logger.debug(f"   Raw candidate data: {candidate_data}")
+                        logger.error(f"   Full candidate: {candidate_str}")
+                        logger.error(f"   Raw data: {candidate_data}")
                 else:
                     logger.info(
                         f"🧊 ICE gathering complete signal received for {container_id[:12]}"

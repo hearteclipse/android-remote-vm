@@ -20,12 +20,11 @@ asyncpg==0.29.0
 alembic==1.13.0
 httpx==0.25.2
 psutil==5.9.6
-# Pin Cython for PyAV build (avoid Cython 3 noexcept mismatch)
-Cython==0.29.36
+# Cython for building PyAV 11 with Python 3.11
+Cython>=3.0.8
 numpy==1.24.3
 # WebRTC dependencies
 aiortc==1.6.0
-# Debian's FFmpeg is typically v5; PyAV 11 targets FFmpeg 6.
-# Pin to PyAV 10 for compatibility with FFmpeg 5 in python:3.11-slim.
-av==10.0.0
+# PyAV 11 supports FFmpeg 5/6 and provides wheels for py311
+av==11.0.0
 

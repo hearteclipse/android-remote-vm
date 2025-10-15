@@ -105,6 +105,16 @@ class WebRTCManager:
             # Create video track from Android screen
             logger.info(f"Creating AndroidVideoTrack for {device_ip}:{webrtc_port}")
             video_track = AndroidVideoTrack(device_ip, webrtc_port)
+
+            # Add event handlers for debugging
+            @pc.on("connectionstatechange")
+            async def on_connectionstatechange():
+                logger.info(f"Connection state: {pc.connectionState}")
+
+            @pc.on("track")
+            def on_track(track):
+                logger.info(f"Track received: {track.kind}")
+
             pc.addTrack(video_track)
             logger.info("Video track added to peer connection")
 
@@ -113,6 +123,7 @@ class WebRTCManager:
             await pc.setLocalDescription(answer)
 
             logger.info(f"WebRTC connection established for {container_id}")
+            logger.info(f"Answer SDP: {pc.localDescription.sdp[:200]}...")
 
             return {"type": "answer", "sdp": pc.localDescription.sdp}
 

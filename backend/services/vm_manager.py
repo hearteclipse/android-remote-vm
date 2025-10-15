@@ -67,8 +67,7 @@ class DockerRuntime:
         if hasattr(device, "webrtc_port") and device.webrtc_port:
             ports[f"{device.webrtc_port}/tcp"] = device.webrtc_port
 
-        # TODO: ajuste volumes/ports/envs conforme seu container Android
-        container = client.containers.run(
+        return client.containers.run(
             image=image,
             name=name,
             detach=True,
@@ -81,7 +80,6 @@ class DockerRuntime:
             mem_limit=f"{device.ram_allocated}m",
             cpu_count=device.cpu_allocated,
         )
-        return container
 
 
 class VMManager:
@@ -122,13 +120,9 @@ class VMManager:
             # Get container IP
             container.reload()
             networks = container.attrs["NetworkSettings"]["Networks"]
-            ip_address = networks.get(settings.ANDROID_NETWORK, {}).get("IPAddress", "")
-
-            if not ip_address:
-                # Fallback to default network
-                ip_address = container.attrs["NetworkSettings"].get(
-                    "IPAddress", "localhost"
-                )
+            ip_address = networks.get(settings.ANDROID_NETWORK, {}).get(
+                "IPAddress", ""
+            ) or container.attrs["NetworkSettings"].get("IPAddress", "localhost")
 
             logger.info(f"Device {device.id} started: {container.id[:12]}")
 
@@ -280,12 +274,9 @@ class VMManager:
         """Get container resource usage metrics"""
         try:
             loop = asyncio.get_event_loop()
-            stats = await loop.run_in_executor(
+            return await loop.run_in_executor(
                 self.executor, self._get_container_stats, container_id
             )
-
-            return stats
-
         except Exception as e:
             logger.error(f"Failed to get metrics for {container_id}: {e}")
             return {"cpu_usage": 0, "ram_usage": 0, "network_in": 0, "network_out": 0}
@@ -343,7 +334,7 @@ class VMManager:
             import os
 
             return os.path.exists("/dev/kvm")
-        except:
+        except Exception:
             return False
 
 
@@ -364,6 +355,7 @@ class PortAllocator:
                 return port
             self.current_port += 1
 
+        # sourcery skip: raise-specific-error
         raise Exception("No available ports in range")
 
     def free_port(self, port: int):

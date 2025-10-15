@@ -14,14 +14,14 @@ from datetime import datetime
 import secrets
 import json
 
-from services.database import get_session, Session, Device, User
+from datetime import timezone
+from services.database import get_session, Session, Device, User, async_session
 from services.webrtc_server import WebRTCManager
 
 router = APIRouter()
 webrtc_manager = WebRTCManager()
 
 
-# Pydantic schemas
 class SessionCreate(BaseModel):
     user_id: int
     device_id: int
@@ -116,8 +116,7 @@ async def list_sessions(
     stmt = stmt.offset(skip).limit(limit)
 
     result = await db.execute(stmt)
-    sessions = result.scalars().all()
-    return sessions
+    return result.scalars().all()
 
 
 @router.get("/{session_id}", response_model=SessionResponse)
@@ -125,14 +124,12 @@ async def get_session(session_id: int, db: AsyncSession = Depends(get_session)):
     """Get session by ID"""
     stmt = select(Session).where(Session.id == session_id)
     result = await db.execute(stmt)
-    session = result.scalar_one_or_none()
-
-    if not session:
+    if session := result.scalar_one_or_none():
+        return session
+    else:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
         )
-
-    return session
 
 
 @router.post("/{session_id}/end", response_model=SessionResponse)
@@ -148,7 +145,7 @@ async def end_session(session_id: int, db: AsyncSession = Depends(get_session)):
         )
 
     session.status = "ended"
-    session.ended_at = datetime.utcnow()
+    session.ended_at = datetime.now(timezone.utc)
 
     await db.commit()
     await db.refresh(session)
@@ -163,7 +160,7 @@ async def websocket_endpoint(websocket: WebSocket, session_token: str):
 
     # Verify session token and get device info
     device = None
-    async for db in get_session():
+    async with async_session() as db:
         stmt = select(Session).where(Session.session_token == session_token)
         result = await db.execute(stmt)
         session = result.scalar_one_or_none()
@@ -180,8 +177,6 @@ async def websocket_endpoint(websocket: WebSocket, session_token: str):
         if not device or device.status != "running":
             await websocket.close(code=1008, reason="Device not available")
             return
-
-        break
 
     try:
         # Handle WebRTC signaling
@@ -218,15 +213,13 @@ async def websocket_endpoint(websocket: WebSocket, session_token: str):
 
     except WebSocketDisconnect:
         # Update session status
-        async for db in get_session():
+        async with async_session() as db:
             stmt = select(Session).where(Session.session_token == session_token)
             result = await db.execute(stmt)
-            session = result.scalar_one_or_none()
 
-            if session:
+            if session := result.scalar_one_or_none():
                 session.status = "disconnected"
                 await db.commit()
-            break
 
     except Exception as e:
         await websocket.close(code=1011, reason=str(e))

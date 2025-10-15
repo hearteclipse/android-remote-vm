@@ -120,8 +120,7 @@ class WebRTCManager:
     async def _handle_ice_candidate(self, message: Dict, container_id: str) -> None:
         """Handle ICE candidate"""
         try:
-            pc = self.peer_connections.get(container_id)
-            if pc:
+            if pc := self.peer_connections.get(container_id):
                 # In production, you would add ICE candidates properly
                 # This is a simplified version
                 logger.info(f"Received ICE candidate for {container_id}")
@@ -159,10 +158,6 @@ class WebRTCManager:
         try:
             if action == "tap":
                 cmd = f"adb -s {device_ip}:5555 shell input tap {x} {y}"
-            elif action == "swipe":
-                # For swipe, you would need start and end coordinates
-                pass
-
             process = await asyncio.create_subprocess_shell(
                 cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
@@ -202,8 +197,7 @@ class WebRTCManager:
     async def close_connection(self, container_id: str):
         """Close WebRTC connection"""
         try:
-            pc = self.peer_connections.get(container_id)
-            if pc:
+            if pc := self.peer_connections.get(container_id):
                 await pc.close()
                 del self.peer_connections[container_id]
                 logger.info(f"Closed WebRTC connection for {container_id}")

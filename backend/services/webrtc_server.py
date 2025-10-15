@@ -198,21 +198,57 @@ class WebRTCManager:
                     )
 
                     try:
-                        # Parse ICE candidate using aiortc's internal function
-                        from aiortc.rtcicetransport import candidate_from_sdp
+                        from aiortc import RTCIceCandidate
 
-                        # Remove "candidate:" prefix if present
-                        if candidate_str.startswith("candidate:"):
-                            candidate_str = candidate_str[10:]
+                        # Parse ICE candidate manually from the string
+                        # Format: "candidate:foundation component protocol priority ip port typ type ..."
+                        parts = candidate_str.split()
 
-                        ice_candidate = candidate_from_sdp(candidate_str)
-                        ice_candidate.sdpMid = sdp_mid
-                        ice_candidate.sdpMLineIndex = sdp_mline_index
+                        if len(parts) < 8:
+                            raise ValueError(
+                                f"Invalid candidate format: {candidate_str}"
+                            )
+
+                        # Extract fields from candidate string
+                        foundation = (
+                            parts[0].split(":")[1] if ":" in parts[0] else parts[0]
+                        )
+                        component = int(parts[1])
+                        protocol = parts[2]
+                        priority = int(parts[3])
+                        ip = parts[4]
+                        port = int(parts[5])
+                        typ_idx = parts.index("typ")
+                        cand_type = parts[typ_idx + 1]
+
+                        # Create RTCIceCandidate
+                        ice_candidate = RTCIceCandidate(
+                            component=component,
+                            foundation=foundation,
+                            ip=ip,
+                            port=port,
+                            priority=priority,
+                            protocol=protocol,
+                            type=cand_type,
+                            sdpMid=sdp_mid,
+                            sdpMLineIndex=sdp_mline_index,
+                        )
+
+                        # Add related address if present (for srflx/relay)
+                        if "raddr" in parts and "rport" in parts:
+                            raddr_idx = parts.index("raddr")
+                            rport_idx = parts.index("rport")
+                            ice_candidate.relatedAddress = parts[raddr_idx + 1]
+                            ice_candidate.relatedPort = (
+                                int(parts[rport_idx + 1])
+                                if parts[rport_idx + 1] != "0"
+                                else None
+                            )
 
                         # Add to peer connection
                         await pc.addIceCandidate(ice_candidate)
                         logger.info(
-                            f"✅ Remote ICE candidate added: {ice_candidate.type} {ice_candidate.ip}:{ice_candidate.port}"
+                            f"✅ Remote ICE candidate added: {cand_type} {ip}:{port}"
                         )
                     except Exception as parse_error:
                         logger.error(f"❌ Failed to parse ICE candidate: {parse_error}")

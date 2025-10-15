@@ -47,8 +47,8 @@ ENV PIP_NO_BUILD_ISOLATION=1
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
     && pip install --no-cache-dir 'Cython<3.0.0'
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies (disable build isolation so pinned Cython is used)
+RUN pip install --no-cache-dir --no-build-isolation -r requirements.txt
 
 # Copy application code
 COPY . .

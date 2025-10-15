@@ -42,6 +42,12 @@ WORKDIR /app
 
 # Copy requirements first for better caching
 COPY requirements.txt .
+# Ensure pip tooling and Cython are compatible for building PyAV
+ENV PIP_NO_BUILD_ISOLATION=1
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir 'Cython<3.0.0'
+
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code

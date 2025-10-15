@@ -20,6 +20,8 @@ asyncpg==0.29.0
 alembic==1.13.0
 httpx==0.25.2
 psutil==5.9.6
+# Pin Cython for PyAV build (Cython 3 breaks PyAV 10 build signatures)
+Cython<3.0.0
 numpy==1.24.3
 # WebRTC dependencies
 aiortc==1.6.0

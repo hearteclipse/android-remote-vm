@@ -50,13 +50,16 @@ class WebRTCManager:
 
         self.media_relay = MediaRelay()
 
-        # Configure STUN/TURN servers
+        # Configure STUN/TURN servers for NAT traversal
         self.rtc_config = RTCConfiguration(
             iceServers=[
                 RTCIceServer(urls=[settings.STUN_SERVER]),
-                # Add Google's public STUN servers for better connectivity
-                RTCIceServer(urls=["stun:stun1.l.google.com:19302"]),
-                RTCIceServer(urls=["stun:stun2.l.google.com:19302"]),
+                # Add TURN server for NAT traversal
+                RTCIceServer(
+                    urls=[settings.TURN_SERVER],
+                    username=settings.TURN_USERNAME,
+                    credential=settings.TURN_PASSWORD,
+                ),
             ]
         )
 

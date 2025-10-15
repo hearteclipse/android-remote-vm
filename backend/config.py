@@ -11,9 +11,6 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://redis:6379"
 
-    TURN_SERVER: str = "turn:openrelay.metered.ca:80"
-    TURN_USERNAME: str = "openrelayproject"
-    TURN_PASSWORD: str = "openrelayproject"
     # Docker
     DOCKER_HOST: str = "unix:///var/run/docker.sock"
     ANDROID_NETWORK: str = "vmi-network"
@@ -27,6 +24,11 @@ class Settings(BaseSettings):
     WEBRTC_PORT_RANGE_START: int = 50000
     WEBRTC_PORT_RANGE_END: int = 51000
     STUN_SERVER: str = "stun:stun.l.google.com:19302"
+
+    # TURN server for NAT traversal (free public server)
+    TURN_SERVER: str = "turn:openrelay.metered.ca:80"
+    TURN_USERNAME: str = "openrelayproject"
+    TURN_PASSWORD: str = "openrelayproject"
 
     # Security
     SECRET_KEY: str = "your-secret-key-change-in-production"

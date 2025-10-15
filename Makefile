@@ -16,6 +16,8 @@ build:
 
 up:
 	docker-compose up -d
+	docker exec -it vmi-backend pip install aiortc av
+	docker-compose restart backend
 	@echo "Services started!"
 	@echo "Web Client: http://localhost:8080"
 	@echo "API Docs: http://localhost:8000/docs"

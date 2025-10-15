@@ -99,8 +99,10 @@ class WebRTCManager:
             self.peer_connections[container_id] = pc
 
             # Create video track from Android screen
+            logger.info(f"Creating AndroidVideoTrack for {device_ip}:{webrtc_port}")
             video_track = AndroidVideoTrack(device_ip, webrtc_port)
             pc.addTrack(video_track)
+            logger.info("Video track added to peer connection")
 
             # Set remote description
             offer = RTCSessionDescription(sdp=message["sdp"], type=message["type"])
@@ -273,10 +275,13 @@ if WEBRTC_AVAILABLE:
                 frame.pts = self.counter
                 frame.time_base = fractions.Fraction(1, 30)
 
+                if self.counter % 30 == 0:  # Log every second
+                    logger.info(f"Sending frame {self.counter}")
+
                 return frame
 
             except Exception as e:
-                logger.error(f"Error receiving frame: {e}")
+                logger.error(f"Error receiving frame: {e}", exc_info=True)
                 raise
 
         def __del__(self):

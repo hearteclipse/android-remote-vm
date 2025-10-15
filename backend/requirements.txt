@@ -20,11 +20,10 @@ asyncpg==0.29.0
 alembic==1.13.0
 httpx==0.25.2
 psutil==5.9.6
-# Cython for building PyAV 11 with Python 3.11
-Cython>=3.0.8
 numpy==1.24.3
-# WebRTC dependencies
-aiortc==1.6.0
-# PyAV 11 supports FFmpeg 5/6 and provides wheels for py311
-av==11.0.0
+# WebRTC dependencies - commented out due to build issues
+# Install manually in running container if needed:
+# pip install aiortc av
+# aiortc==1.6.0
+# av==11.0.0
 

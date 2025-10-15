@@ -137,11 +137,20 @@ async function setupWebRTC() {
 
         // Handle incoming tracks
         peerConnection.ontrack = (event) => {
-            console.log('Received remote track');
+            console.log('Received remote track', event);
             const remoteVideo = document.getElementById('remoteVideo');
             remoteVideo.srcObject = event.streams[0];
-            updateStatus('connected', 'Connected');
-            setLoading(false);
+
+            // Force play (some browsers need this)
+            remoteVideo.play().then(() => {
+                console.log('Video playing successfully');
+                updateStatus('connected', 'Connected');
+                setLoading(false);
+            }).catch(err => {
+                console.error('Error playing video:', err);
+                updateStatus('connected', 'Connected (video issue)');
+                setLoading(false);
+            });
         };
 
         // Handle ICE candidates

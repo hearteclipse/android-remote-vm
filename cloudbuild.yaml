@@ -1,0 +1,81 @@
+# Google Cloud Build configuration for VMI Platform
+
+steps:
+  # Build backend image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/vmi-backend:$BUILD_ID'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/vmi-backend:latest'
+      - '-f'
+      - 'backend/Dockerfile'
+      - 'backend/'
+    id: 'build-backend'
+
+  # Build Android emulator image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/vmi-android:$BUILD_ID'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/vmi-android:latest'
+      - '-f'
+      - 'android/Dockerfile'
+      - 'android/'
+    id: 'build-android'
+
+  # Push backend image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/vmi-backend:$BUILD_ID'
+    id: 'push-backend'
+    waitFor: ['build-backend']
+
+  # Push Android image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/vmi-android:$BUILD_ID'
+    id: 'push-android'
+    waitFor: ['build-android']
+
+  # Deploy to Cloud Run (optional)
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'vmi-backend'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/vmi-backend:$BUILD_ID'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--memory'
+      - '2Gi'
+      - '--cpu'
+      - '2'
+      - '--max-instances'
+      - '10'
+    id: 'deploy-backend'
+    waitFor: ['push-backend']
+
+# Store images in Container Registry
+images:
+  - 'gcr.io/$PROJECT_ID/vmi-backend:$BUILD_ID'
+  - 'gcr.io/$PROJECT_ID/vmi-backend:latest'
+  - 'gcr.io/$PROJECT_ID/vmi-android:$BUILD_ID'
+  - 'gcr.io/$PROJECT_ID/vmi-android:latest'
+
+# Build timeout
+timeout: '1800s'
+
+options:
+  machineType: 'N1_HIGHCPU_8'
+  diskSizeGb: 100
+

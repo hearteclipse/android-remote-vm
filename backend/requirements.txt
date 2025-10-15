@@ -1,0 +1,27 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+redis==5.0.1
+pydantic==2.5.0
+pydantic-settings==2.1.0
+email-validator==2.1.0
+python-multipart==0.0.6
+jinja2==3.1.2
+aiofiles==23.2.1
+websockets==12.0
+docker==7.0.0
+requests-unixsocket==0.3.0
+aiohttp==3.9.1
+python-jose[cryptography]==3.3.0
+passlib==1.7.4
+bcrypt==4.1.2
+asyncpg==0.29.0
+alembic==1.13.0
+httpx==0.25.2
+psutil==5.9.6
+numpy==1.24.3
+# WebRTC dependencies - install separately if needed (requires more build tools)
+# To enable WebRTC streaming, install these after the container is running:
+# pip install aiortc==1.6.0 av==11.0.0
+

@@ -25,6 +25,7 @@ class H264Player:
         self.scrcpy_proc = None
         self.ffmpeg_proc = None
         self.player = None
+        self.pipe_path = None
         logger.info(f"H264Player initialized for device {device_serial}")
 
     async def start(self):
@@ -122,10 +123,45 @@ class H264Player:
 
             logger.info("✅ FFmpeg remuxer started")
 
-            # Create MediaPlayer to read from ffmpeg stdout
-            self.player = MediaPlayer(
-                "pipe:", format="mpegts", file=self.ffmpeg_proc.stdout
+            # Create MediaPlayer to read from stdin (ffmpeg pipes to it)
+            # We need to create a custom player that reads from the process
+            import os
+            import tempfile
+
+            # Create a named pipe for ffmpeg output
+            self.pipe_path = f"/tmp/scrcpy_{self.device_serial.replace(':', '_')}.ts"
+            try:
+                os.remove(self.pipe_path)
+            except:
+                pass
+            os.mkfifo(self.pipe_path)
+
+            # Restart ffmpeg to write to the named pipe
+            self.ffmpeg_proc.kill()
+            await self.ffmpeg_proc.wait()
+
+            ffmpeg_cmd = [
+                "ffmpeg",
+                "-i",
+                "tcp://127.0.0.1:27183",
+                "-c",
+                "copy",  # No re-encoding, just copy H.264
+                "-f",
+                "mpegts",
+                self.pipe_path,
+            ]
+
+            self.ffmpeg_proc = await asyncio.create_subprocess_exec(
+                *ffmpeg_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
             )
+
+            # Wait a moment for pipe to be ready
+            await asyncio.sleep(0.5)
+
+            # Create MediaPlayer from the named pipe
+            self.player = MediaPlayer(self.pipe_path, format="mpegts")
 
             logger.info("✅ H.264 pipeline ready!")
             return True
@@ -176,6 +212,15 @@ class H264Player:
             except:
                 pass
 
+            # Remove named pipe
+            if self.pipe_path:
+                try:
+                    import os
+
+                    os.remove(self.pipe_path)
+                except:
+                    pass
+
             logger.info("🛑 H.264 player stopped")
 
         except Exception as e:
@@ -190,6 +235,7 @@ class ScreenrecordPlayer:
         self.adb_proc = None
         self.ffmpeg_proc = None
         self.player = None
+        self.pipe_path = None
         logger.info(f"ScreenrecordPlayer initialized for device {device_serial}")
 
     async def start(self):
@@ -221,7 +267,19 @@ class ScreenrecordPlayer:
                 *adb_cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
 
-            # Start ffmpeg to remux
+            # Create a named pipe for ffmpeg output
+            import os
+
+            self.pipe_path = (
+                f"/tmp/screenrecord_{self.device_serial.replace(':', '_')}.ts"
+            )
+            try:
+                os.remove(self.pipe_path)
+            except:
+                pass
+            os.mkfifo(self.pipe_path)
+
+            # Start ffmpeg to remux from ADB stdout to named pipe
             ffmpeg_cmd = [
                 "ffmpeg",
                 "-f",
@@ -232,7 +290,7 @@ class ScreenrecordPlayer:
                 "copy",
                 "-f",
                 "mpegts",
-                "pipe:1",
+                self.pipe_path,
             ]
 
             self.ffmpeg_proc = await asyncio.create_subprocess_exec(
@@ -242,10 +300,11 @@ class ScreenrecordPlayer:
                 stderr=asyncio.subprocess.DEVNULL,
             )
 
-            # Create MediaPlayer
-            self.player = MediaPlayer(
-                "pipe:", format="mpegts", file=self.ffmpeg_proc.stdout
-            )
+            # Wait for pipe to be ready
+            await asyncio.sleep(0.5)
+
+            # Create MediaPlayer from named pipe
+            self.player = MediaPlayer(self.pipe_path, format="mpegts")
 
             logger.info("✅ Screenrecord pipeline ready!")
             return True
@@ -271,6 +330,15 @@ class ScreenrecordPlayer:
             if self.adb_proc:
                 self.adb_proc.kill()
                 await self.adb_proc.wait()
+
+            # Remove named pipe
+            if self.pipe_path:
+                try:
+                    import os
+
+                    os.remove(self.pipe_path)
+                except:
+                    pass
 
             logger.info("🛑 Screenrecord player stopped")
 

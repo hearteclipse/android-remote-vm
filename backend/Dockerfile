@@ -26,6 +26,7 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     lsb-release \
     android-tools-adb \
+    ffmpeg \
     git \
     && rm -rf /var/lib/apt/lists/*
 

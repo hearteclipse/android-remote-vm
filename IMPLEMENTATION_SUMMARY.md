@@ -214,3 +214,28 @@ The system is now production-ready for MVP deployment with:
 
 **Next Step**: Deploy to GCP VM and test with real users! 🚀
 
+---
+
+## 🔧 Critical Fixes Applied (Post-Deployment Issues)
+
+### Issue 1: ffmpeg Not Found
+**Error**: `[Errno 2] No such file or directory` when starting H.264 player  
+**Fix**: Added `ffmpeg` to backend Dockerfile system dependencies  
+**File**: `backend/Dockerfile` line 29
+
+### Issue 2: MediaPlayer Pipe Issue  
+**Error**: `'StreamReader' object has no attribute 'fileno'`  
+**Root Cause**: aiortc's `MediaPlayer` cannot directly read from Python subprocess pipes  
+**Fix**: Changed approach to use named pipes (`mkfifo`) that ffmpeg writes to and MediaPlayer reads from  
+**Files Modified**:
+- `backend/services/h264_streamer.py` - H264Player.start()
+- `backend/services/h264_streamer.py` - ScreenrecordPlayer.start()
+
+**Implementation**:
+- Create named pipe at `/tmp/scrcpy_{serial}.ts` or `/tmp/screenrecord_{serial}.ts`
+- ffmpeg writes H.264/MPEGTS to named pipe
+- MediaPlayer reads from named pipe path
+- Cleanup: Remove named pipes on player stop
+
+These fixes are **critical** for H.264 streaming to work and must be deployed together.
+

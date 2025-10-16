@@ -6,6 +6,7 @@ import subprocess
 import fractions
 
 from config import settings
+from services.h264_streamer import H264Player, ScreenrecordPlayer
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +124,10 @@ class WebRTCManager:
                     logger.info("✅ Backend WebRTC connection fully established!")
                 elif pc.connectionState == "failed":
                     logger.error("❌ Backend WebRTC connection failed!")
+                elif pc.connectionState == "closed":
+                    # Cleanup H.264 player when connection closes
+                    if hasattr(pc, "_h264_player"):
+                        await pc._h264_player.stop()
 
             @pc.on("iceconnectionstatechange")
             async def on_iceconnectionstatechange():
@@ -136,11 +141,48 @@ class WebRTCManager:
             def on_track(track):
                 logger.info(f"📹 Track received: {track.kind}")
 
-            # Create video track from Android screen BEFORE setting remote description
-            logger.info(f"Creating AndroidVideoTrack for {device_ip}:{webrtc_port}")
-            video_track = AndroidVideoTrack(device_ip, webrtc_port)
-            pc.addTrack(video_track)
-            logger.info("Video track added to peer connection")
+            @pc.on("datachannel")
+            def on_datachannel(channel):
+                logger.info(f"📡 DataChannel opened: {channel.label}")
+
+                @channel.on("message")
+                async def on_message(message):
+                    """Handle control messages from client"""
+                    try:
+                        data = json.loads(message)
+                        await self._handle_datachannel_message(data, device_ip)
+                    except Exception as e:
+                        logger.error(f"Error handling datachannel message: {e}")
+
+            # Create H.264 video stream from Android device
+            # Try scrcpy first (lower latency), fallback to screenrecord
+            device_serial = f"{device_ip}:5555"
+            logger.info(f"Starting H.264 stream for {device_serial}...")
+
+            try:
+                h264_player = H264Player(device_serial)
+                await h264_player.start()
+                logger.info("✅ Using scrcpy H.264 stream (low latency)")
+            except Exception as scrcpy_error:
+                logger.warning(f"Scrcpy failed: {scrcpy_error}, trying screenrecord...")
+                try:
+                    h264_player = ScreenrecordPlayer(device_serial)
+                    await h264_player.start()
+                    logger.info("✅ Using screenrecord H.264 stream")
+                except Exception as screenrecord_error:
+                    logger.error(f"Screenrecord also failed: {screenrecord_error}")
+                    raise RuntimeError("Both scrcpy and screenrecord failed")
+
+            # Store player reference for cleanup
+            pc._h264_player = h264_player
+
+            # Add H.264 video track to peer connection
+            video_track = h264_player.video()
+            if video_track:
+                pc.addTrack(video_track)
+                logger.info("H.264 video track added to peer connection")
+            else:
+                raise RuntimeError("Failed to get video track from H.264 player")
 
             # Now set remote description
             offer = RTCSessionDescription(sdp=message["sdp"], type=message["type"])
@@ -176,6 +218,7 @@ class WebRTCManager:
             raise
 
     async def _handle_ice_candidate(self, message: Dict, container_id: str) -> None:
+        # sourcery skip: low-code-quality
         """Handle ICE candidate from client"""
         try:
             if pc := self.peer_connections.get(container_id):
@@ -262,8 +305,63 @@ class WebRTCManager:
         except Exception as e:
             logger.error(f"❌ Error handling ICE candidate: {e}", exc_info=True)
 
+    async def _handle_datachannel_message(self, data: Dict, device_ip: str):
+        """Handle messages from WebRTC DataChannel (touch, swipe, etc.)"""
+        try:
+            msg_type = data.get("type")
+            device_serial = f"{device_ip}:5555"
+
+            # Display dimensions (should match H.264 stream size)
+            DISPLAY_W, DISPLAY_H = 1280, 720
+
+            if msg_type == "tap":
+                # Normalized coordinates (0..1) from client
+                x_norm = data.get("x", 0)
+                y_norm = data.get("y", 0)
+
+                # Convert to pixel coordinates
+                px = max(0, min(int(x_norm * DISPLAY_W), DISPLAY_W - 1))
+                py = max(0, min(int(y_norm * DISPLAY_H), DISPLAY_H - 1))
+
+                logger.info(f"👆 Tap at ({px}, {py})")
+
+                cmd = f"adb -s {device_serial} shell input tap {px} {py}"
+                proc = await asyncio.create_subprocess_shell(
+                    cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                )
+                await proc.communicate()
+
+            elif msg_type == "swipe":
+                # Swipe gesture
+                x1 = max(0, min(int(data.get("x1", 0) * DISPLAY_W), DISPLAY_W - 1))
+                y1 = max(0, min(int(data.get("y1", 0) * DISPLAY_H), DISPLAY_H - 1))
+                x2 = max(0, min(int(data.get("x2", 0) * DISPLAY_W), DISPLAY_W - 1))
+                y2 = max(0, min(int(data.get("y2", 0) * DISPLAY_H), DISPLAY_H - 1))
+                duration = data.get("duration", 300)
+
+                logger.info(f"👉 Swipe from ({x1},{y1}) to ({x2},{y2})")
+
+                cmd = f"adb -s {device_serial} shell input swipe {x1} {y1} {x2} {y2} {duration}"
+                proc = await asyncio.create_subprocess_shell(
+                    cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                )
+                await proc.communicate()
+
+            elif msg_type == "keyevent":
+                keycode = data.get("keycode")
+                logger.info(f"⌨️ Keyevent: {keycode}")
+
+                cmd = f"adb -s {device_serial} shell input keyevent {keycode}"
+                proc = await asyncio.create_subprocess_shell(
+                    cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                )
+                await proc.communicate()
+
+        except Exception as e:
+            logger.error(f"Error handling datachannel message: {e}")
+
     async def _handle_input(self, message: Dict, device_ip: str) -> Dict:
-        """Handle user input (touch, keyboard, etc.)"""
+        """Handle user input (touch, keyboard, etc.) - legacy WebSocket method"""
         try:
             input_type = message.get("inputType")
 
@@ -388,7 +486,7 @@ if WEBRTC_AVAILABLE:
                 logger.error(f"❌ Failed to connect ADB: {e}")
                 return False
 
-        async def recv(self):
+        async def recv(self):  # sourcery skip: low-code-quality
             """Receive next video frame from Android screen"""
             if self.counter == 0:
                 logger.info("🎥 FIRST recv() call - video streaming starting!")
@@ -446,6 +544,7 @@ if WEBRTC_AVAILABLE:
                             logger.error("❌ Failed to capture screenshot, retrying...")
                         # Retry connection on next frame
                         self.adb_connected = False
+                        # sourcery skip: raise-specific-error
                         raise Exception("Screenshot capture failed")
 
                     # Decode PNG to numpy array

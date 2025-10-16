@@ -19,9 +19,11 @@ A complete dockerized platform for renting virtual Android devices with real-tim
 ## ✨ Features
 
 - **Virtual Android Devices**: Run Android 11 emulators in Docker containers
-- **Real-time Streaming**: Low-latency WebRTC streaming to web browsers
+- **Low-Latency H.264 Streaming**: Hardware-accelerated H.264 video via scrcpy/screenrecord
+- **WebRTC Real-Time Communication**: Direct peer-to-peer streaming with STUN/TURN support
 - **User Management**: Multi-tenant system with user isolation
-- **Device Control**: Full touch, keyboard, and gesture support via ADB
+- **Touch & Gesture Control**: Full touch, swipe, keyboard support via WebRTC DataChannel
+- **Automatic Boot Detection**: Waits for Android to fully boot before streaming
 - **Resource Management**: CPU, RAM limits and monitoring per device
 - **Auto-scaling**: Automatic device lifecycle management
 - **Admin Dashboard**: Real-time monitoring of users, devices, and metrics
@@ -35,24 +37,38 @@ A complete dockerized platform for renting virtual Android devices with real-tim
 │   Client    │ ◄─────► │    Nginx     │ ◄─────► │  Backend API    │
 │  (Browser)  │         │ (Reverse     │         │   (FastAPI)     │
 │             │         │   Proxy)     │         │                 │
-└─────────────┘         └──────────────┘         └────────┬────────┘
-      │                                                    │
-      │ WebRTC                                            │
-      │                                          ┌────────┴────────┐
-      │                                          │                 │
-      │                                    ┌─────▼─────┐    ┌─────▼─────┐
-      │                                    │ PostgreSQL│    │   Redis   │
-      │                                    └───────────┘    └───────────┘
-      │                                          │
-      │                                          │
-      └──────────────────────────────────────────┼──────────────────┐
-                                                 │                  │
-                                         ┌───────▼────────┐  ┌──────▼───────┐
-                                         │   Android      │  │   Android    │
-                                         │  Container 1   │  │ Container N  │
-                                         │  (Emulator)    │  │ (Emulator)   │
-                                         └────────────────┘  └──────────────┘
+└──────┬──────┘         └──────────────┘         └────────┬────────┘
+       │                                                   │
+       │ WebRTC (H.264 Video + DataChannel Control)       │
+       │                                         ┌─────────┴─────────┐
+       │                                         │                   │
+       │                                   ┌─────▼─────┐      ┌─────▼─────┐
+       │                                   │ PostgreSQL│      │   Redis   │
+       │                                   └───────────┘      └───────────┘
+       │                                         │
+       │                                         │ ADB Connection
+       └─────────────────────────────────────────┼────────────────────┐
+                                                 │                    │
+                                         ┌───────▼────────┐    ┌──────▼───────┐
+                                         │   Android      │    │   Android    │
+                                         │  Container 1   │    │ Container N  │
+                                         │  (Emulator +   │    │ (Emulator +  │
+                                         │   scrcpy)      │    │  scrcpy)     │
+                                         └────────────────┘    └──────────────┘
+                                                ↓                      ↓
+                                         H.264 Stream            H.264 Stream
+                                         via scrcpy              via scrcpy
 ```
+
+### Streaming Pipeline
+
+1. **Android Device** → scrcpy server captures screen with hardware H.264 encoding
+2. **scrcpy** → Streams H.264 via ADB to backend
+3. **Backend (ffmpeg)** → Remuxes H.264 to MPEGTS (no re-encoding)
+4. **Backend (aiortc)** → Wraps in WebRTC and sends to browser
+5. **Browser** → Decodes H.264 with hardware acceleration and displays
+
+**Result**: End-to-end latency of ~100-200ms with no server-side re-encoding!
 
 ## 📦 Prerequisites
 
@@ -161,6 +177,8 @@ android-remote-vm/
 │   │   ├── database.py       # Database models and session
 │   │   ├── vm_manager.py     # Docker container management
 │   │   ├── webrtc_server.py  # WebRTC streaming server
+│   │   ├── h264_streamer.py  # H.264 streaming via scrcpy/screenrecord
+│   │   ├── adb_utils.py      # ADB connection and boot management
 │   │   └── orchestrator.py   # VM lifecycle orchestration
 │   ├── templates/            # HTML templates
 │   │   └── dashboard.html    # Admin dashboard
@@ -213,8 +231,13 @@ MAX_DEVICES_PER_USER=5
 MAX_CONCURRENT_SESSIONS=100
 
 # WebRTC
-WEBRTC_PORT_RANGE_START=50000
-WEBRTC_PORT_RANGE_END=51000
+WEBRTC_PORT_RANGE_START=49152
+WEBRTC_PORT_RANGE_END=49252
+WEBRTC_PUBLIC_IP=  # Set to your public IP for remote access
+STUN_SERVER=stun:stun.l.google.com:19302
+TURN_SERVER=turn:openrelay.metered.ca:80
+TURN_USERNAME=openrelayproject
+TURN_PASSWORD=openrelayproject
 ```
 
 ### Docker Compose Services
@@ -334,10 +357,12 @@ gcloud compute firewall-rules create allow-vmi-http \
   --allow tcp:80,tcp:443,tcp:8000,tcp:8080 \
   --target-tags vmi-host
 
-# Allow WebRTC ports
+# Allow WebRTC ports (UDP is critical for WebRTC performance)
 gcloud compute firewall-rules create allow-vmi-webrtc \
-  --allow tcp:50000-51000,udp:50000-51000 \
-  --target-tags vmi-host
+  --allow udp:49152-65535 \
+  --source-ranges 0.0.0.0/0 \
+  --target-tags vmi-host \
+  --description="WebRTC UDP ports for VMI Platform"
 ```
 
 ### Step 7: Setup Cloud SQL (Optional, for Production)
@@ -512,10 +537,26 @@ docker-compose logs
 
 ### WebRTC Connection Issues
 
-1. **Check firewall**: Ensure ports 50000-51000 are open
-2. **Check STUN server**: Verify STUN_SERVER in .env is accessible
-3. **Browser console**: Check for WebRTC errors in browser console
-4. **Network**: Ensure client can reach server IP
+1. **Check firewall**: Ensure UDP ports 49152-65535 are open
+2. **Set public IP**: Set `WEBRTC_PUBLIC_IP` in `.env` to your server's public IP
+3. **Check STUN/TURN**: Verify STUN_SERVER and TURN_SERVER in .env are accessible
+4. **Browser console**: Check for WebRTC errors in browser console (F12)
+5. **ICE connection**: Look for "ICE connection state: connected" in console
+6. **Network**: Ensure client can reach server IP and UDP traffic is not blocked
+
+### Android Device Not Showing Video
+
+1. **Wait for boot**: Device takes 30-60s to fully boot after "start"
+2. **Check scrcpy**: Run `docker exec <container> ps aux | grep scrcpy`
+3. **Check ADB**: Run `docker exec vmi-backend adb devices` to see connected devices
+4. **Fallback to screenrecord**: If scrcpy fails, system automatically tries screenrecord
+5. **Container logs**: Check logs with `docker logs <android-container-id>`
+
+### Black/Brown Screen
+
+- **Cause**: Android device hasn't finished booting
+- **Solution**: Wait 30-60 seconds after clicking "Connect"
+- **Verify**: Backend logs should show "✅ Android device ready!"
 
 ### Database Connection Errors
 

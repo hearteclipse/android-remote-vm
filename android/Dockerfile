@@ -15,7 +15,14 @@ RUN apt-get update && apt-get install -y \
     socat \
     python3 \
     python3-pip \
+    wget \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# Install scrcpy for low-latency H.264 screen capture
+RUN wget https://github.com/Genymobile/scrcpy/releases/download/v2.3.1/scrcpy-server-v2.3.1 \
+    -O /usr/local/bin/scrcpy-server.jar \
+    && chmod +x /usr/local/bin/scrcpy-server.jar
 
 # Install Python dependencies for WebRTC
 RUN pip3 install --no-cache-dir \

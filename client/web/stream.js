@@ -125,6 +125,9 @@ async function connectWebSocket(token) {
     });
 }
 
+// DataChannel for control (touch, keyboard, etc.)
+let controlChannel = null;
+
 // Setup WebRTC connection
 async function setupWebRTC() {
     try {
@@ -139,6 +142,23 @@ async function setupWebRTC() {
                 }
             ]
         });
+
+        // Create DataChannel for control (must be created before offer)
+        controlChannel = peerConnection.createDataChannel('control');
+
+        controlChannel.onopen = () => {
+            console.log('📡 Control channel opened');
+            // Enable touch input on video element
+            setupTouchInput();
+        };
+
+        controlChannel.onclose = () => {
+            console.log('📡 Control channel closed');
+        };
+
+        controlChannel.onerror = (error) => {
+            console.error('📡 Control channel error:', error);
+        };
 
         // Handle incoming tracks
         peerConnection.ontrack = (event) => {
@@ -240,11 +260,26 @@ async function setupWebRTC() {
 
         await peerConnection.setLocalDescription(offer);
 
+        // Optimize SDP for low-latency H.264
+        let optimizedSdp = peerConnection.localDescription.sdp;
+
+        // Prefer H.264 baseline profile for low latency
+        optimizedSdp = optimizedSdp.replace(
+            /a=fmtp:(\d+).*profile-level-id=[0-9a-fA-F]+.*/g,
+            'a=fmtp:$1 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f'
+        );
+
+        // Remove RTX (retransmission) for lower latency
+        optimizedSdp = optimizedSdp.replace(/a=rtpmap:\d+ rtx\/\d+\r\n/g, '');
+        optimizedSdp = optimizedSdp.replace(/a=fmtp:\d+ apt=\d+\r\n/g, '');
+
+        console.log('📝 Optimized SDP for low-latency H.264');
+
         // Send offer through WebSocket (guard against CLOSED/CLOSING)
         if (websocket && websocket.readyState === WebSocket.OPEN) {
             websocket.send(JSON.stringify({
                 type: 'offer',
-                sdp: offer.sdp
+                sdp: optimizedSdp
             }));
         } else {
             console.warn('WebSocket not open. Aborting offer send.');
@@ -322,27 +357,110 @@ function sendKey(keyName) {
         'VOLUME_DOWN': 25
     };
 
+    // Try DataChannel first (preferred)
+    if (controlChannel && controlChannel.readyState === 'open') {
+        controlChannel.send(JSON.stringify({
+            type: 'keyevent',
+            keycode: keyMap[keyName]
+        }));
+        return;
+    }
+
+    // Fallback to WebSocket
     sendInput({
         inputType: 'key',
         keyCode: keyMap[keyName]
     });
 }
 
-// Handle touch events on video
-document.getElementById('remoteVideo').addEventListener('click', (event) => {
-    const video = event.target;
-    const rect = video.getBoundingClientRect();
+// Setup touch input on video element
+function setupTouchInput() {
+    const remoteVideo = document.getElementById('remoteVideo');
 
-    const x = Math.floor((event.clientX - rect.left) / rect.width * 1080);
-    const y = Math.floor((event.clientY - rect.top) / rect.height * 2340);
+    // Remove old listeners
+    const newVideo = remoteVideo.cloneNode(true);
+    remoteVideo.parentNode.replaceChild(newVideo, remoteVideo);
+    const video = document.getElementById('remoteVideo');
 
-    sendInput({
-        inputType: 'touch',
-        action: 'tap',
-        x: x,
-        y: y
+    // Handle click/tap
+    video.addEventListener('click', (e) => {
+        if (!controlChannel || controlChannel.readyState !== 'open') {
+            console.warn('Control channel not open');
+            return;
+        }
+
+        const rect = video.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width;
+        const y = (e.clientY - rect.top) / rect.height;
+
+        console.log(`👆 Tap at normalized (${x.toFixed(2)}, ${y.toFixed(2)})`);
+
+        controlChannel.send(JSON.stringify({
+            type: 'tap',
+            x: x,
+            y: y
+        }));
     });
-});
+
+    // Handle touch events for mobile
+    let touchStartPos = null;
+
+    video.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const rect = video.getBoundingClientRect();
+        touchStartPos = {
+            x: (touch.clientX - rect.left) / rect.width,
+            y: (touch.clientY - rect.top) / rect.height,
+            time: Date.now()
+        };
+    });
+
+    video.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        if (!controlChannel || controlChannel.readyState !== 'open' || !touchStartPos) {
+            return;
+        }
+
+        const touch = e.changedTouches[0];
+        const rect = video.getBoundingClientRect();
+        const endPos = {
+            x: (touch.clientX - rect.left) / rect.width,
+            y: (touch.clientY - rect.top) / rect.height
+        };
+
+        const duration = Date.now() - touchStartPos.time;
+        const distance = Math.sqrt(
+            Math.pow(endPos.x - touchStartPos.x, 2) +
+            Math.pow(endPos.y - touchStartPos.y, 2)
+        );
+
+        // If it's a short tap (not a swipe)
+        if (distance < 0.05 && duration < 300) {
+            console.log(`👆 Tap at normalized (${touchStartPos.x.toFixed(2)}, ${touchStartPos.y.toFixed(2)})`);
+            controlChannel.send(JSON.stringify({
+                type: 'tap',
+                x: touchStartPos.x,
+                y: touchStartPos.y
+            }));
+        } else {
+            // It's a swipe
+            console.log(`👉 Swipe from (${touchStartPos.x.toFixed(2)}, ${touchStartPos.y.toFixed(2)}) to (${endPos.x.toFixed(2)}, ${endPos.y.toFixed(2)})`);
+            controlChannel.send(JSON.stringify({
+                type: 'swipe',
+                x1: touchStartPos.x,
+                y1: touchStartPos.y,
+                x2: endPos.x,
+                y2: endPos.y,
+                duration: Math.min(duration, 500)
+            }));
+        }
+
+        touchStartPos = null;
+    });
+
+    console.log('✅ Touch input enabled');
+}
 
 // Disconnect from device
 async function disconnect() {
@@ -369,6 +487,10 @@ function cleanup() {
     if (websocket) {
         websocket.close();
         websocket = null;
+    }
+
+    if (controlChannel) {
+        controlChannel = null;
     }
 
     sessionToken = null;

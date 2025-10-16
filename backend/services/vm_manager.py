@@ -9,6 +9,7 @@ import psutil
 from contextlib import suppress
 
 from config import settings
+from services.adb_utils import adb_wait_for_boot, adb_ensure_connected, adb_start_server
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,26 @@ class VMManager:
             ) or container.attrs["NetworkSettings"].get("IPAddress", "localhost")
 
             logger.info(f"Device {device.id} started: {container.id[:12]}")
+            logger.info(f"Device IP: {ip_address}")
+
+            # Wait for Android to complete boot before returning
+            device_serial = f"{ip_address}:5555"
+            logger.info(f"⏳ Waiting for Android boot on {device_serial}...")
+
+            try:
+                # Ensure ADB server is running
+                await adb_start_server()
+
+                # Wait for Android to boot (with 2 minute timeout)
+                await adb_wait_for_boot(device_serial, timeout=120)
+                logger.info(f"✅ Android device {device_serial} is ready!")
+
+            except TimeoutError as e:
+                logger.error(f"⚠️ Android boot timeout: {e}")
+                logger.warning("Continuing anyway, but device may not be fully ready")
+            except Exception as e:
+                logger.error(f"⚠️ Error waiting for boot: {e}")
+                logger.warning("Continuing anyway, but device may not be fully ready")
 
             return {
                 "container_id": container.id,

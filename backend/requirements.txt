@@ -24,5 +24,5 @@ numpy==1.24.3
 Pillow==10.1.0
 # WebRTC dependencies - using stable versions
 aiortc==1.6.0
-av==8.1.0
+av==10.0.0
 

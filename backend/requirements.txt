@@ -22,9 +22,7 @@ httpx==0.25.2
 psutil==5.9.6
 numpy==1.24.3
 Pillow==10.1.0
-# WebRTC dependencies - commented out due to build issues
-# Install manually in running container if needed:
-# pip install aiortc av
-# aiortc==1.6.0
-# av==11.0.0
+# WebRTC dependencies
+aiortc==1.6.0
+av==11.0.0
 

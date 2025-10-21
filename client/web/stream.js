@@ -136,6 +136,11 @@ async function setupWebRTC() {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 {
+                    urls: 'turn:34.42.79.210:3478',
+                    username: 'user',
+                    credential: 'pass'
+                },
+                {
                     urls: 'turn:openrelay.metered.ca:80',
                     username: 'openrelayproject',
                     credential: 'openrelayproject'

@@ -54,6 +54,14 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - ./backend:/app
+    devices:
+      - /dev/kvm:/dev/kvm
+    group_add:
+      - "kvm"
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp=unconfined
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,6 +71,36 @@ services:
       - vmi-network
     restart: unless-stopped
     user: root
+
+  # Android Emulator service
+  emulator:
+    build:
+      context: ./android
+      dockerfile: Dockerfile
+    container_name: vmi-emulator
+    privileged: true
+    ports:
+      - "5554:5554"
+      - "5555:5555"
+      - "50000:50000"
+    environment:
+      - DEVICE=Pixel_7_Pro
+      - EMULATOR_ARGS=-no-window -no-boot-anim -no-audio -gpu swiftshader_indirect
+      - ADB_PORT=5555
+      - WEBRTC_PORT=50000
+    devices:
+      - /dev/kvm:/dev/kvm
+    group_add:
+      - "kvm"
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp=unconfined
+    networks:
+      - vmi-network
+    restart: unless-stopped
+    depends_on:
+      - backend
 
   # Nginx reverse proxy
   nginx:

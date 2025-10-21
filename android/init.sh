@@ -21,7 +21,7 @@ adb devices
 # Check if KVM is available
 if [ -e /dev/kvm ]; then
     echo "KVM is available, using hardware acceleration"
-    EMULATOR_ARGS="$EMULATOR_ARGS -accel on -qemu -enable-kvm"
+    EMULATOR_ARGS="$EMULATOR_ARGS -accel kvm"
 else
     echo "KVM not available, using software acceleration"
 fi
@@ -45,6 +45,7 @@ emulator -avd "$AVD_NAME" \
     -no-boot-anim \
     -no-snapshot \
     -wipe-data \
+    -gpu swiftshader_indirect \
     &
 
 EMULATOR_PID=$!

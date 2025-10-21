@@ -48,8 +48,8 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
-# Install setuptools with distutils support
-RUN pip install --no-cache-dir setuptools==65.7.0
+# Install PyAV with pre-built wheels to avoid compilation issues
+RUN pip install --no-cache-dir --only-binary=all av==11.0.0
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code

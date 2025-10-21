@@ -22,7 +22,7 @@ httpx==0.25.2
 psutil==5.9.6
 numpy==1.24.3
 Pillow==10.1.0
-# WebRTC dependencies
+# WebRTC dependencies - using stable versions
 aiortc==1.6.0
-av==11.0.0
+av==8.1.0
 

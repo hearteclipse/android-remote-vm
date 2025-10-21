@@ -46,7 +46,8 @@ COPY requirements.txt .
 # Ensure pip tooling is up-to-date
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install Python dependencies (allow build isolation for PyAV 11 wheels)
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
